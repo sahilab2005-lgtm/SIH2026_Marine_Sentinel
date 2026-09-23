@@ -1,0 +1,9 @@
+[project]
+name = "marine-sentinel"
+version = "0.2.0"
+description = "Local-first side-scan sonar debris and anomaly detection prototype"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

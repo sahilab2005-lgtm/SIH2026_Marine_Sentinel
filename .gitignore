@@ -1,0 +1,28 @@
+# Python environments and caches
+.venv/
+.runtime/
+.marine-env/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.cache/
+
+# Streamlit and local configuration
+.streamlit/secrets.toml
+.env
+Ultralytics/
+
+# Large local-only data, weights, and generated outputs
+dataset/
+models/*.pt
+models/*.onnx
+results/*
+!results/.gitkeep
+*.zip
+deliverables/
+
+# OS and editor files
+.vscode/
+.DS_Store
+Thumbs.db
