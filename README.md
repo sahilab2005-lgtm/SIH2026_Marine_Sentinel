@@ -1,72 +1,147 @@
-# Marine Sentinel
+# 🌊 Marine Sentinel
 
-AI-powered detection of marine debris and anomalies in side-scan sonar imagery, developed as a Smart India Hackathon prototype.
+> **AI-powered detection of underwater marine debris and anomalies from side-scan sonar imagery.**
 
-Marine Sentinel uses a two-service local architecture: the Streamlit dashboard is the operator interface, while a FastAPI backend performs sonar conditioning, YOLO inference, geotagging, and report generation.
+Marine Sentinel is a Smart India Hackathon prototype that helps an operator turn a sonar image into a visual debris review, approximate geotagged locations, and downloadable CSV/JSON field reports.
 
-## Features
+## What it does
 
-- Local-first Streamlit operator dashboard: upload → analyse → export.
-- YOLO detection of `Crab-Pot` and `Maybe-Crab-Pot` targets.
-- Image-calibrated confidence separation to reduce weak acoustic-noise proposals.
-- Sonar preprocessing: speckle reduction and contrast normalization.
-- Bounding-box dimensions, priority scoring, and approximate latitude/longitude.
-- Downloadable field-ready CSV and JSON anomaly reports.
+1. Upload a side-scan sonar image (`PNG`, `JPG`, `JPEG`, or `TIFF`).
+2. The FastAPI backend reduces acoustic noise and improves local contrast.
+3. A local YOLO model detects trained target classes such as `Crab-Pot` and `Maybe-Crab-Pot`.
+4. The Streamlit dashboard displays the sonar image, red detection boxes, confidence information, and mission diagnostics.
+5. Download a CSV or JSON report containing target class, confidence, dimensions, priority, and estimated coordinates.
 
-## Project structure
+> The dashboard uses an image-calibrated confidence split. It does **not** create a fixed number of boxes; each result comes from the uploaded image’s model predictions.
+
+## Architecture
 
 ```text
-MarineDebrisAI/
-├── app.py                     # Streamlit dashboard (API client)
-├── config/dataset.yaml        # YOLO dataset configuration
-├── src/marine_sentinel/       # Core processing, API, and frontend client modules
-├── scripts/                   # Setup, backend, dashboard, train, evaluate utilities
-├── notebooks/                 # Google Colab training notebook
-├── tests/                     # Automated tests
-├── docs/                      # SIH submission notes
-├── deliverables/              # SIH presentation deck
-├── models/                    # Local trained weights (not committed)
-├── dataset/                   # Local training data (not committed)
-└── results/                   # Local training and inference outputs (not committed)
+Browser
+   │
+   ▼
+Streamlit dashboard (app.py) ──HTTP──► FastAPI backend (main.py)
+                                          │
+                                          ├── Sonar preprocessing (OpenCV)
+                                          ├── YOLO inference (Ultralytics)
+                                          └── Geotagged CSV / JSON reporting
 ```
 
-## Run locally
+## Quick start — Windows / VS Code
 
-Create an environment once, then open **two PowerShell terminals** in the project folder:
+### 1. Clone the repository
+
+```powershell
+git clone https://github.com/YOUR-USERNAME/YOUR-REPOSITORY.git
+cd YOUR-REPOSITORY
+```
+
+### 2. Install the project once
+
+Make sure Python is installed and available as `python`, then run:
 
 ```powershell
 .\scripts\setup_dashboard.ps1
+```
+
+This creates a local `.marine-env` environment, installs packages, and creates `.env` from `.env.example` when needed.
+
+### 3. Add the trained model (for real YOLO detection)
+
+The model is intentionally not stored on GitHub because model files are large. Place it here:
+
+```text
+models/best.pt
+```
+
+Without this file, the dashboard still starts in **review mode**, but it cannot provide trained YOLO class predictions.
+
+### 4. Start the FastAPI backend
+
+Open a terminal in the project folder and run:
+
+```powershell
 .\scripts\run_backend.ps1
 ```
 
-In the second terminal:
+You should see a message saying that Uvicorn is running. Open [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs) to view and test the API.
+
+### 5. Start the Streamlit dashboard
+
+Open a **second** terminal in the same project folder:
 
 ```powershell
 .\scripts\run_dashboard.ps1
 ```
 
-The backend API is available at `http://127.0.0.1:8000/docs`; the dashboard is available at the local URL printed by Streamlit.
+Open the local Streamlit link printed in that terminal, normally `http://localhost:8501`.
 
-Or use an existing Python environment:
+## Direct commands instead of scripts
+
+If you have activated a Python environment yourself, these commands also work from the project root:
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-python -m uvicorn marine_sentinel.api.main:app --app-dir src --reload
-# In a second terminal:
+python -m uvicorn main:app --reload
+```
+
+In a second terminal:
+
+```powershell
 streamlit run app.py
 ```
 
-Place trained weights at `models/best.pt`. The dashboard will then use YOLO locally; nothing is uploaded to the cloud.
+## How to use the dashboard
+
+1. Enter a mission ID, survey start latitude/longitude, and ground resolution in the left sidebar.
+2. Open **Upload mission scan** and select one sonar image.
+3. Open **Detection intelligence** to view the conditioned image and red AI bounding boxes.
+4. Check the detected-target total, mean confidence, detection queue, and model verdict.
+5. Open **Export report** to download CSV or JSON for a cleanup/AUV team.
+6. Use **System health** to explain the complete processing pipeline during a presentation.
 
 ## Configuration
 
-All operational values are stored locally in `.env`, including API host/port, model path, upload limit, survey defaults, and detection/preprocessing settings. `.env` is never uploaded to GitHub. Teammates copy `.env.example` to `.env` and adjust their local values.
+All changeable runtime values are stored in `.env`:
+
+- API address and port
+- Model location
+- Upload size limit
+- Default mission metadata
+- Detection/filter settings
+- Sonar preprocessing settings
+
+`.env` is ignored by Git, so private/local settings are not uploaded. GitHub includes only `.env.example` as a safe template.
+
+## Project structure
+
+```text
+MarineDebrisAI/
+├── app.py                         # Streamlit operator dashboard
+├── main.py                        # FastAPI root entry point
+├── .env.example                   # Safe configuration template
+├── config/dataset.yaml            # YOLO dataset configuration
+├── src/marine_sentinel/
+│   ├── api/main.py                # FastAPI analysis endpoints
+│   ├── api_client.py              # Streamlit-to-FastAPI client
+│   ├── detector.py                # YOLO and review-mode detection
+│   ├── processing.py              # Sonar denoising and contrast
+│   ├── reporting.py               # Geotag and report creation
+│   └── visuals.py                 # Red detection-box overlay
+├── scripts/                       # Setup, run, train, evaluate tools
+├── notebooks/                     # Google Colab training notebook
+├── tests/                         # Automated tests
+├── models/                        # Put best.pt here locally (ignored by Git)
+├── dataset/                       # Local training data (ignored by Git)
+└── results/                       # Local model outputs (ignored by Git)
+```
 
 ## Training and evaluation
 
-The local `dataset/` and `models/` folders are deliberately excluded from GitHub because they are large. To retrain on a GPU, open [notebooks/train_marine_sentinel_colab.ipynb](notebooks/train_marine_sentinel_colab.ipynb) in Google Colab.
+The dataset and weights are excluded from GitHub because of their size. Train on a GPU using the included Colab notebook:
+
+[Open the Colab training notebook](notebooks/train_marine_sentinel_colab.ipynb)
+
+Or, with the dataset available locally:
 
 ```powershell
 python scripts/train.py
@@ -74,8 +149,32 @@ python scripts/evaluate.py
 python scripts/predict.py path\to\sonar_image.jpg
 ```
 
-`evaluate.py` uses only the held-out test split. Copy the resulting `best.pt` to `models/best.pt` before running the dashboard.
+Copy the resulting `best.pt` into `models/best.pt`, then restart the backend.
+
+## Run tests
+
+```powershell
+python -m pytest -q
+```
+
+## Troubleshooting
+
+| Problem | Solution |
+|---|---|
+| `API OFFLINE` appears in the dashboard | Start `./scripts/run_backend.ps1` first. |
+| `Could not import module "main"` | Run `python -m uvicorn main:app --reload` from the project root. |
+| Browser shows `404 Not Found` at port 8000 | This is normal; open `/docs` or use the Streamlit dashboard. |
+| Dashboard says review mode | Add `models/best.pt`, then restart the FastAPI backend. |
+| `git add .` reports dubious ownership | Run `git config --global --add safe.directory C:/Users/Acer/OneDrive/MarineDebrisAI` once. |
+
+## Privacy and GitHub safety
+
+The following are excluded through `.gitignore` and are not uploaded: `.env`, trained weights, datasets, virtual environments, results, editor settings, local caches, and the presentation deck.
 
 ## Important limitation
 
-This is a prototype. Model predictions should be verified by a marine operator before cleanup or navigation decisions are made.
+This is a prototype for decision support. Model predictions and approximate geotags must be verified by qualified marine operators before cleanup, navigation, or safety decisions.
+
+---
+
+Built for Smart India Hackathon · Marine debris monitoring · Local-first AI
