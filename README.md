@@ -10,7 +10,7 @@ Marine Sentinel is a Smart India Hackathon prototype that helps an operator turn
 2. The FastAPI backend reduces acoustic noise and improves local contrast.
 3. A local YOLO model detects trained target classes such as `Crab-Pot` and `Maybe-Crab-Pot`.
 4. The Streamlit dashboard displays the sonar image, red detection boxes, confidence information, and mission diagnostics.
-5. Download a CSV or JSON report containing target class, confidence, dimensions, priority, and estimated coordinates.
+5. Verify or reject each detection in the operator review queue, then download a CSV or JSON report containing verified targets only.
 
 > The dashboard uses an image-calibrated confidence split. It does **not** create a fixed number of boxes; each result comes from the uploaded image’s model predictions.
 
@@ -96,8 +96,9 @@ streamlit run app.py
 2. Open **Upload mission scan** and select one sonar image.
 3. Open **Detection intelligence** to view the conditioned image and red AI bounding boxes.
 4. Check the detected-target total, mean confidence, detection queue, and model verdict.
-5. Open **Export report** to download CSV or JSON for a cleanup/AUV team.
-6. Use **System health** to explain the complete processing pipeline during a presentation.
+5. Set each detection to **Verified** or **Rejected** in the operator review queue. Pending and rejected targets are excluded from exports.
+6. Open **Export report** to download the verified targets as CSV or JSON for a cleanup/AUV team.
+7. Use **System health** to explain the complete processing pipeline during a presentation.
 
 ## Configuration
 

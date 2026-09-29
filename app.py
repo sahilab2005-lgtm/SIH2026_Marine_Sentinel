@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import sys
 from io import BytesIO
@@ -64,7 +65,7 @@ st.markdown(
 
 def clear_analysis() -> None:
     for key in ("image", "image_name", "image_bytes", "processed", "overlay", "report", "mode",
-                "diagnostics", "report_payload", "raw_detection_count", "auto_threshold"):
+                "diagnostics", "report_payload", "raw_detection_count", "auto_threshold", "analysis_signature"):
         st.session_state.pop(key, None)
 
 
@@ -125,20 +126,28 @@ with upload_tab:
             st.caption(f"Mission ID: {mission_id}")
 
 image = st.session_state.get("image")
-if image is not None and backend_health is not None:
+analysis_signature = None
+if image is not None:
+    analysis_signature = hashlib.sha256(
+        st.session_state.image_bytes + f"|{mission_id}|{latitude:.6f}|{longitude:.6f}|{resolution:.4f}".encode()
+    ).hexdigest()
+
+if image is not None and backend_health is not None and st.session_state.get("analysis_signature") != analysis_signature:
     with st.spinner("FastAPI is conditioning sonar texture and running local inference..."):
         try:
             result = analyze_image(st.session_state.image_name, st.session_state.image_bytes, mission_id, latitude, longitude, resolution)
             st.session_state.update(
                 processed=decode_image(result["processed_image_png_base64"]),
                 overlay=decode_image(result["overlay_image_png_base64"], "RGB"),
-                report=pd.DataFrame(result["report"]), mode=result["detector_mode"],
+                report=pd.DataFrame(result["report"]).assign(review_status="Pending"), mode=result["detector_mode"],
                 raw_detection_count=result["raw_proposal_count"], auto_threshold=result["auto_threshold"],
                 diagnostics=result["diagnostics"], report_payload=result["report_payload"],
+                analysis_signature=analysis_signature,
             )
         except MarineSentinelAPIError as error:
             st.session_state.update(report=pd.DataFrame(), mode="API unavailable", raw_detection_count=0,
-                                    auto_threshold=None, diagnostics={}, report_payload={}, processed=image, overlay=image)
+                                    auto_threshold=None, diagnostics={}, report_payload={}, processed=image, overlay=image,
+                                    analysis_signature=analysis_signature)
             st.error(str(error))
 
 with analysis_tab:
@@ -175,7 +184,18 @@ with analysis_tab:
             threshold = st.session_state.get("auto_threshold")
             cutoff = f"{threshold:.0%}" if threshold is not None else "image-calibrated"
             st.markdown(f'<div class="notice"><b>Model verdict · {len(report)} target(s) detected</b><br>Confidence separation was calculated from this scan’s own prediction distribution (cutoff: {cutoff}).</div>', unsafe_allow_html=True)
-            st.dataframe(report, use_container_width=True, hide_index=True)
+            st.caption("Human-in-the-loop verification · Set each target to Verified or Rejected before preparing the field report.")
+            edited_report = st.data_editor(
+                report, use_container_width=True, hide_index=True,
+                column_config={"review_status": st.column_config.SelectboxColumn(
+                    "Operator review", options=["Pending", "Verified", "Rejected"], required=True
+                )},
+                disabled=[column for column in report.columns if column != "review_status"],
+                key=f"review_{analysis_signature}",
+            )
+            st.session_state.report = edited_report
+            verified_count = int((edited_report["review_status"] == "Verified").sum())
+            st.caption(f"{verified_count} verified · {int((edited_report['review_status'] == 'Pending').sum())} pending · {int((edited_report['review_status'] == 'Rejected').sum())} rejected")
 
 with report_tab:
     report = st.session_state.get("report", pd.DataFrame())
@@ -184,12 +204,19 @@ with report_tab:
     elif report.empty:
         st.markdown('<div class="empty"><h3>No reportable anomaly</h3><p>The selected scan has no validated target to export.</p></div>', unsafe_allow_html=True)
     else:
-        st.markdown("### Field hand-off package")
-        st.markdown('<p class="caption">Coordinates are estimated from your survey origin and ground-resolution metadata; validate against vessel GPS/ping logs before deployment.</p>', unsafe_allow_html=True)
-        csv_column, json_column = st.columns(2)
-        csv_column.download_button("Download CSV anomaly report", report.to_csv(index=False).encode(), "marine_sentinel_report.csv", "text/csv", use_container_width=True)
-        json_column.download_button("Download JSON mission report", json.dumps(st.session_state.report_payload, indent=2), "marine_sentinel_report.json", "application/json", use_container_width=True)
-        st.dataframe(report[["anomaly_id", "priority", "classification", "confidence_percent", "latitude", "longitude", "width_m", "length_m"]], hide_index=True, use_container_width=True)
+        approved = report[report.get("review_status", "Pending") == "Verified"].drop(columns=["review_status"], errors="ignore")
+        if approved.empty:
+            st.markdown('<div class="empty"><h3>Operator review required</h3><p>Verify at least one detection in the Detection intelligence tab to include it in the field report.</p></div>', unsafe_allow_html=True)
+        else:
+            payload = dict(st.session_state.report_payload)
+            payload["anomalies"] = approved.to_dict(orient="records")
+            payload["operator_review"] = {"verified_count": len(approved), "excluded_count": len(report) - len(approved)}
+            st.markdown(f"### Field hand-off package · {len(approved)} verified target(s)")
+            st.markdown('<p class="caption">Only operator-verified targets are included. Coordinates are estimates from the configured survey origin and resolution.</p>', unsafe_allow_html=True)
+            csv_column, json_column = st.columns(2)
+            csv_column.download_button("Download verified CSV report", approved.to_csv(index=False).encode(), "marine_sentinel_verified_report.csv", "text/csv", use_container_width=True)
+            json_column.download_button("Download verified JSON report", json.dumps(payload, indent=2), "marine_sentinel_verified_report.json", "application/json", use_container_width=True)
+            st.dataframe(approved[["anomaly_id", "priority", "classification", "confidence_percent", "latitude", "longitude", "width_m", "length_m"]], hide_index=True, use_container_width=True)
 
 with system_tab:
     st.markdown("### System health & pipeline")
