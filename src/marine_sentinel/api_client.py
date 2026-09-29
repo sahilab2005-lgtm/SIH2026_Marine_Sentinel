@@ -42,6 +42,37 @@ def analyze_image(
         raise MarineSentinelAPIError("Could not reach FastAPI backend. Start it with `python -m uvicorn marine_sentinel.api.main:app --reload`.") from error
 
 
+def review_detection(analysis_id: str, anomaly_id: str, decision: str) -> dict[str, Any]:
+    try:
+        response = requests.post(
+            f"{settings.api_base_url}/api/v1/analyses/{analysis_id}/review",
+            json={"anomaly_id": anomaly_id, "decision": decision},
+            timeout=settings.api_health_timeout_seconds,
+        )
+        if not response.ok:
+            raise MarineSentinelAPIError(response.json().get("detail", "Could not save operator review."))
+        return response.json()
+    except requests.RequestException as error:
+        raise MarineSentinelAPIError("Could not save review to the FastAPI backend.") from error
+
+
+def generate_report(analysis_id: str, report_format: str) -> bytes:
+    try:
+        response = requests.get(
+            f"{settings.api_base_url}/api/v1/analyses/{analysis_id}/report",
+            params={"format": report_format}, timeout=settings.api_health_timeout_seconds,
+        )
+        if not response.ok:
+            try:
+                detail = response.json().get("detail", "Could not generate report.")
+            except ValueError:
+                detail = "Could not generate report."
+            raise MarineSentinelAPIError(detail)
+        return response.content
+    except requests.RequestException as error:
+        raise MarineSentinelAPIError("Could not generate report through the FastAPI backend.") from error
+
+
 def _content_type(filename: str) -> str:
     extension = filename.lower().rsplit(".", 1)[-1]
     return {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "tif": "image/tiff", "tiff": "image/tiff"}.get(extension, "application/octet-stream")
